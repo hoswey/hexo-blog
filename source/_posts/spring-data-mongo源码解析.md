@@ -7,6 +7,11 @@ date: 2018-04-04 09:50:00
 ## 背景
 由于项目已经很重的使用了mongodb, 对于mongodb的访问主要采用[spring-data-mongo](https://docs.spring.io/spring-data/mongodb/docs/2.0.6.RELEASE/reference/html/),该框架对于一些简单的查询语句都能直接通过[Query methods](https://docs.spring.io/spring-data/mongodb/docs/2.0.6.RELEASE/reference/html/#mongodb.repositories.queries),需要手工写查询语句的情况也很少，这种magic般的使用方法也引起了我的好奇，以前写查询语句的时候规范也是说，对于进行sql查询的方法应当和查询的条件保持一致，例如findByXXX之类，没想到spring data只需要按照类似这种规范，就能直接生成对应的查询语句。
 ## 源码分析
+**目的**
+
+1. 了解spring接口类方法的原理。
+2. 了解MongoRepository接口crud方法能直接调用的原理。
+
 基于spring boot写了一个简单的[demo](https://github.com/hoswey/example-spring-data-mongo.git)
 
 [ArticleRepositroy](https://github.com/hoswey/example-spring-data-mongo/blob/master/src/main/java/com/example/spring/mongo/demo/repository/ArticleRepository.java)
@@ -32,7 +37,7 @@ spring是如何实现的，通过接口就可能注入实现具体功能，一�
 {% asset_img pasted-1.png example.jpg %}
 
 spring data mongo主要是由这两个package下的配置类初始化,对于Repository类的初始化，核心类是
-MongoRepositoriesAutoConfigureRegistrary
+MongoRepositoriesAutoConfigureRegistrar
 
 ```java
 class MongoRepositoriesAutoConfigureRegistrar
@@ -59,7 +64,7 @@ class MongoRepositoriesAutoConfigureRegistrar
 }
 ```
 
-该类继承了AbstractRepositoryConfigurationSourceSupport并且实现了三个抽象方法，AbstractRepositoryConfigurationSourceSupport是spring data的核心，从以下继承关系上看,spring data所有集成的模块都是继承该类，所有理解这几个类是了解spring data的关键
+该类继承了**AbstractRepositoryConfigurationSourceSupport**并且实现了三个抽象方法，简单查看了AbstractRepositoryConfigurationSourceSupport的子类，可以发现spring data很多模块都是继承该类，所以**AbstractRepositoryConfigurationSourceSupport**是Spring data初始化的核心
 
 - AbstractRepositoryConfigurationSourceSupport
 	- CassandraRepositoriesAutoConfigureRegistrar 
@@ -75,7 +80,9 @@ class MongoRepositoriesAutoConfigureRegistrar
 	- SolrRepositoriesRegistrar 
 	- MongoReactiveRepositoriesAutoConfigureRegistrar
 
-MongoRepositoriesAutoConfigureRegistrar实现的几个方法都是简单的返回几个对象，从这三个类的定义上看EnableMongoRepositories和EnableMongoRepositoriesConfiguration主要都是一些是控制了Repository的初始化流程，例如该类实现了方法getRepositoryFactoryBeanClassName返回MongoRepositoryFactoryBean。
+- MongoRepositoriesAutoConfigureRegistrar实现的三个方法都是简单的返回对象，这里主要有两个对象
+	- EnableMongoRepositories 配置类，方法getRepositoryFactoryBeanClassName返回MongoRepositoryFactoryBean，该工厂bean返回了Repositoryd的代理
+	- RepositoryConfigurationExtension 该类主要是在Spring Data通用的bean初始化阶段加入mongodb特有的一些配置
 
 <details><summary>EnableMongoRepositories</summary>
 
@@ -279,8 +286,12 @@ public interface RepositoryConfigurationExtension {
 </p>
 </details>
 
-下面继续看父类AbstractRepositoryConfigurationSourceSupport
-**AbstractRepositoryConfigurationSourceSupport**
+### 初始化流程
+
+#### 入口
+
+MongoRepositoriesAutoConfigureRegistrar的父类AbstractRepositoryConfigurationSourceSupport
+**AbstractRepositoryConfigurationSourceSupport**，该类主要实现了[ImportBeanDefinitionRegistrar](https://github.com/spring-projects/spring-framework/blob/28b2a4d46db39f7c6c25ba8a4ace825af3c4cbcb/spring-context/src/main/java/org/springframework/context/annotation/ImportBeanDefinitionRegistrar.java#L61)的registerBeanDefinitions方法
 
 ```java
 	@Override
@@ -291,3 +302,142 @@ public interface RepositoryConfigurationExtension {
 						getRepositoryConfigurationExtension());
 	}
 ```
+#### 初始化总流程
+registerBeanDefinitions. registerBeanDefinitions调用了RepositoryConfigurationDelegate.registerRepositoriesIn方法
+这个方法包含了spring data mongo对于mongo repository的初始化的整个流程，主要逻辑是通过configurationSource（由EnableMongoRepositories构造），以及RepositoryConfigurationExtension扫描BasePackages下面的类，构造beanDefinition并且注册到spring registry。
+
+```java
+	/**
+	 * Registers the found repositories in the given {@link BeanDefinitionRegistry}.
+	 * 
+	 * @param registry
+	 * @param extension
+	 * @return {@link BeanComponentDefinition}s for all repository bean definitions found.
+	 */
+	public List<BeanComponentDefinition> registerRepositoriesIn(BeanDefinitionRegistry registry,
+			RepositoryConfigurationExtension extension) {
+
+		extension.registerBeansForRoot(registry, configurationSource);
+
+		RepositoryBeanDefinitionBuilder builder = new RepositoryBeanDefinitionBuilder(registry, extension, resourceLoader,
+				environment);
+		List<BeanComponentDefinition> definitions = new ArrayList<>();
+
+		for (RepositoryConfiguration<? extends RepositoryConfigurationSource> configuration : extension
+				.getRepositoryConfigurations(configurationSource, resourceLoader, inMultiStoreMode)) {
+
+			//BeanDefintion构造的主要逻辑
+			BeanDefinitionBuilder definitionBuilder = builder.build(configuration);
+
+			extension.postProcess(definitionBuilder, configurationSource);
+
+			if (isXml) {
+				extension.postProcess(definitionBuilder, (XmlRepositoryConfigurationSource) configurationSource);
+			} else {
+				extension.postProcess(definitionBuilder, (AnnotationRepositoryConfigurationSource) configurationSource);
+			}
+
+			AbstractBeanDefinition beanDefinition = definitionBuilder.getBeanDefinition();
+			String beanName = configurationSource.generateBeanName(beanDefinition);
+
+			if (LOGGER.isDebugEnabled()) {
+				LOGGER.debug(REPOSITORY_REGISTRATION, extension.getModuleName(), beanName,
+						configuration.getRepositoryInterface(), configuration.getRepositoryFactoryBeanClassName());
+			}
+
+			beanDefinition.setAttribute(FACTORY_BEAN_OBJECT_TYPE, configuration.getRepositoryInterface());
+
+			registry.registerBeanDefinition(beanName, beanDefinition);
+			definitions.add(new BeanComponentDefinition(beanDefinition, beanName));
+		}
+
+		return definitions;
+	}
+```
+
+#### BeanDefinition构造
+registerRepositoriesIn调用了RepositoryBeanDefinitionBuilder.build方法
+
+```java
+public BeanDefinitionBuilder build(RepositoryConfiguration<?> configuration) {
+
+		Assert.notNull(registry, "BeanDefinitionRegistry must not be null!");
+		Assert.notNull(resourceLoader, "ResourceLoader must not be null!");
+
+		//设置类为MongoRepositoryFactoryBean
+		BeanDefinitionBuilder builder = BeanDefinitionBuilder
+				.rootBeanDefinition(configuration.getRepositoryFactoryBeanClassName());
+
+		builder.getRawBeanDefinition().setSource(configuration.getSource());
+		builder.addConstructorArgValue(configuration.getRepositoryInterface());
+		builder.addPropertyValue("queryLookupStrategyKey", configuration.getQueryLookupStrategyKey());
+		builder.addPropertyValue("lazyInit", configuration.isLazyInit());
+
+		configuration.getRepositoryBaseClassName()//
+				.ifPresent(it -> builder.addPropertyValue("repositoryBaseClass", it));
+
+		NamedQueriesBeanDefinitionBuilder definitionBuilder = new NamedQueriesBeanDefinitionBuilder(
+				extension.getDefaultNamedQueryLocation());
+		configuration.getNamedQueriesLocation().ifPresent(definitionBuilder::setLocations);
+
+		builder.addPropertyValue("namedQueries", definitionBuilder.build(configuration.getSource()));
+
+		//2.0版本已经不建议使用的方法，和Framement类似
+		registerCustomImplementation(configuration).ifPresent(it -> {
+			builder.addPropertyReference("customImplementation", it);
+			builder.addDependsOn(it);
+		});
+
+		BeanDefinitionBuilder fragmentsBuilder = BeanDefinitionBuilder
+				.rootBeanDefinition(RepositoryFragmentsFactoryBean.class);
+
+		List<String> fragmentBeanNames = registerRepositoryFragmentsImplementation(configuration) //
+				.map(RepositoryFragmentConfiguration::getFragmentBeanName) //
+				.collect(Collectors.toList());
+
+		fragmentsBuilder.addConstructorArgValue(fragmentBeanNames);
+
+		//注册Fragmemnt,也就是这种做法
+		//https://docs.spring.io/spring-data/mongodb/docs/2.0.6.RELEASE/reference/html/#repositories.custom-implementations
+		builder.addPropertyValue("repositoryFragments",
+				ParsingUtils.getSourceBeanDefinition(fragmentsBuilder, configuration.getSource()));
+
+		RootBeanDefinition evaluationContextProviderDefinition = new RootBeanDefinition(
+				ExtensionAwareEvaluationContextProvider.class);
+		evaluationContextProviderDefinition.setSource(configuration.getSource());
+
+		builder.addPropertyValue("evaluationContextProvider", evaluationContextProviderDefinition);
+
+		return builder;
+	}
+```
+
+#### MongoRepositoryFactoryBean
+MongoRepositoriesAutoConfigureRegistrar的职责最终就是把所有扫到的Repository构造成BeanDefinition注册到Registry, BeanDefinition的BaseClass是MongoRepositoryFactoryBean，所以探究这个FactoryBean的逻辑是了解spring data核心的关键
+
+**类图**
+{% plantuml %}
+
+interface FactoryBean
+class MongoRepositoryFactoryBean
+class RepositoryFactoryBeanSupport {
+	{field} -T repository
+	{method} +afterPropertiesSet
+	{method} +T getObject
+}
+MongoRepositoryFactoryBean --|> RepositoryFactoryBeanSupport
+RepositoryFactoryBeanSupport ..|> FactoryBean
+{% endplantuml %}
+
+**序列图**
+{% plantuml %}
+participant MongoRepositoryFactoryBean
+
+MongoRepositoryFactoryBean -> MongoRepositoryFactoryBean: afterPropertiesSet
+
+{% endplantuml %}
+
+**序列图
+
+## 特别
+SurroundingTransactionDetectorMethodInterceptor
