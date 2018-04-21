@@ -4,15 +4,16 @@ categories: []
 date: 2018-04-04 09:50:00
 ---
 
-## 背景
-由于项目已经很重的使用了mongodb, 对于mongodb的访问主要采用[spring-data-mongo](https://docs.spring.io/spring-data/mongodb/docs/2.0.6.RELEASE/reference/html/),该框架对于一些简单的查询语句都能直接通过[Query methods](https://docs.spring.io/spring-data/mongodb/docs/2.0.6.RELEASE/reference/html/#mongodb.repositories.queries),需要手工写查询语句的情况也很少，这种magic般的使用方法也引起了我的好奇，以前写查询语句的时候规范也是说，对于进行sql查询的方法应当和查询的条件保持一致，例如findByXXX之类，没想到spring data只需要按照类似这种规范，就能直接生成对应的查询语句。
-## 源码分析
-**目的**
+# 背景
+由于项目已经很重的使用了mongodb, 对于mongodb的访问主要采用[spring-data-mongo](https://docs.spring.io/spring-data/mongodb/docs/2.0.6.RELEASE/reference/html/),该框架对于一些简单的查询语句都能直接通过[Query methods](https://docs.spring.io/spring-data/mongodb/docs/2.0.6.RELEASE/reference/html/#mongodb.repositories.queries),需要手工写查询语句的情况也很少，这种magic般的使用方法也引起了我的好奇，以前写查询语句的时候规范也是说，对于进行sql查询的方法应当和查询的条件保持一致，例如findByXXX之类，没想到spring data只需要按照类似这种规范，就能直接生成对应的查询语句，那么底层是怎么实现的？
 
-1. 了解spring接口类方法的原理。
-2. 了解MongoRepository接口crud方法能直接调用的原理。
+# 源码分析
+## 目的
+了解spring接口类方法的原理。
 
-基于spring boot写了一个简单的[demo](https://github.com/hoswey/example-spring-data-mongo.git)
+
+## 准备工作
+通过spring boot快速搭建[demo](https://github.com/hoswey/example-spring-data-mongo.git),该demo包含一个MongoRepository,通过main函数执行一些简单的查询方法。
 
 [ArticleRepositroy](https://github.com/hoswey/example-spring-data-mongo/blob/master/src/main/java/com/example/spring/mongo/demo/repository/ArticleRepository.java)
 
@@ -20,16 +21,22 @@ date: 2018-04-04 09:50:00
 /**
 * 无需任何实现，使用findByAuthor时，spring data会自动生成mongodb查询语句
 **/
-public interface ArticleRepository extends MongoRepository<Article, String> {
-	
-  Article findByAuthor(String author);
+public interface ArticleRepository extends MongoRepository<Article, String>,
+    CustomizedArticleRepository {
+
+  List<Article> findByAuthorOrderByIdDescAllIgnoreCase(String author);
+
+  List<Article> findByNumOfLikeIsGreaterThan(int numOfLike);
 }
 ```
-spring是如何实现的，通过接口就可能注入实现具体功能，一般都是通过代理实现，那么只要找出spring是如何初始化该bean问题就可以解决。
-### Spring Boot配置
-该demo是使用spring boot作为示例，那么按照spring boot的特点，一般都是由各种XXXAutoConfiguration进行初始化。
 
-**相关配置类**
+## 源码分析
+### Spring Boot配置
+要了解spring data mongo原理，最直接的方法就是看repository是怎么初始化的，由于该demo是基于spring boot，按照spring boot的特点，初始化的控制都是由各种AutoConfiguration引导。
+
+直接在IDE里搜索 \*Mongo\*AutoConfiguration, 可以发现以下配置类
+
+#### 相关配置类
 
 - org.springframework.boot.autoconfigure.mongo，MongoClient,MongoTemplate相关配置
 {% asset_img pasted-0.png example.jpg %}
@@ -64,7 +71,7 @@ class MongoRepositoriesAutoConfigureRegistrar
 }
 ```
 
-该类继承了**AbstractRepositoryConfigurationSourceSupport**并且实现了三个抽象方法，简单查看了AbstractRepositoryConfigurationSourceSupport的子类，可以发现spring data很多模块都是继承该类，所以**AbstractRepositoryConfigurationSourceSupport**是Spring data初始化的核心
+该类继承了**AbstractRepositoryConfigurationSourceSupport**并且实现了三个抽象方法，查看了AbstractRepositoryConfigurationSourceSupport的子类，可以发现spring data很多模块都是继承该类，所以**AbstractRepositoryConfigurationSourceSupport**是Spring data初始化的核心
 
 - AbstractRepositoryConfigurationSourceSupport
 	- CassandraRepositoriesAutoConfigureRegistrar 
@@ -80,9 +87,11 @@ class MongoRepositoriesAutoConfigureRegistrar
 	- SolrRepositoriesRegistrar 
 	- MongoReactiveRepositoriesAutoConfigureRegistrar
 
-- MongoRepositoriesAutoConfigureRegistrar实现的三个方法都是简单的返回对象，这里主要有两个对象
-	- EnableMongoRepositories 配置类，方法getRepositoryFactoryBeanClassName返回MongoRepositoryFactoryBean，该工厂bean返回了Repositoryd的代理
-	- RepositoryConfigurationExtension 该类主要是在Spring Data通用的bean初始化阶段加入mongodb特有的一些配置
+#### MongoRepositoriesAutoConfigureRegistrar
+
+该类实现的三个方法都是返回了配置类POJO，这里主要有两个对象
+1. EnableMongoRepositories 配置类，方法getRepositoryFactoryBeanClassName返回MongoRepositoryFactoryBean，该工厂bean返回了Repositoryd的代理
+1. RepositoryConfigurationExtension 该类主要是在Spring Data通用的bean初始化阶段加入mongodb特有的一些配置，其大部分方法都是接受了BeanDefinitionBuilder进行一些
 
 <details><summary>EnableMongoRepositories</summary>
 
@@ -291,7 +300,7 @@ public interface RepositoryConfigurationExtension {
 #### 入口
 
 MongoRepositoriesAutoConfigureRegistrar的父类AbstractRepositoryConfigurationSourceSupport
-**AbstractRepositoryConfigurationSourceSupport**，该类主要实现了[ImportBeanDefinitionRegistrar](https://github.com/spring-projects/spring-framework/blob/28b2a4d46db39f7c6c25ba8a4ace825af3c4cbcb/spring-context/src/main/java/org/springframework/context/annotation/ImportBeanDefinitionRegistrar.java#L61)的registerBeanDefinitions方法
+**AbstractRepositoryConfigurationSourceSupport**，该类主要实现了[ImportBeanDefinitionRegistrar](https://github.com/spring-projects/spring-framework/blob/28b2a4d46db39f7c6c25ba8a4ace825af3c4cbcb/spring-context/src/main/java/org/springframework/context/annotation/ImportBeanDefinitionRegistrar.java#L61)的registerBeanDefinitions方法，registerBeanDefinitions是Spring初始化的时候调用，让程序能够自主注册一些bean到spring容器里
 
 ```java
 	@Override
@@ -302,7 +311,7 @@ MongoRepositoriesAutoConfigureRegistrar的父类AbstractRepositoryConfigurationS
 						getRepositoryConfigurationExtension());
 	}
 ```
-#### 初始化总流程
+#### 流程
 registerBeanDefinitions. registerBeanDefinitions调用了RepositoryConfigurationDelegate.registerRepositoriesIn方法
 这个方法包含了spring data mongo对于mongo repository的初始化的整个流程，主要逻辑是通过configurationSource（由EnableMongoRepositories构造），以及RepositoryConfigurationExtension扫描BasePackages下面的类，构造beanDefinition并且注册到spring registry。
 
@@ -355,8 +364,9 @@ registerBeanDefinitions. registerBeanDefinitions调用了RepositoryConfiguration
 	}
 ```
 
-#### BeanDefinition构造
-registerRepositoriesIn调用了RepositoryBeanDefinitionBuilder.build方法
+### BeanDefinition构造
+registerRepositoriesIn调用了RepositoryBeanDefinitionBuilder.build方法，注意到BeanDefinitionBuilder
+				.rootBeanDefinition(configuration.getRepositoryFactoryBeanClassName())，这里把MongoRepositoryFactoryBean设置为BeanDefinition的class,意味着Bean的初始化由MongoRepositoryFactoryBean进行控制
 
 ```java
 public BeanDefinitionBuilder build(RepositoryConfiguration<?> configuration) {
@@ -412,10 +422,35 @@ public BeanDefinitionBuilder build(RepositoryConfiguration<?> configuration) {
 	}
 ```
 
-#### MongoRepositoryFactoryBean
-MongoRepositoriesAutoConfigureRegistrar的职责最终就是把所有扫到的Repository构造成BeanDefinition注册到Registry, BeanDefinition的BaseClass是MongoRepositoryFactoryBean，所以探究这个FactoryBean的逻辑是了解spring data核心的关键
+### MongoRepositoryFactoryBean
+MongoRepositoriesAutoConfigureRegistrar的职责最终就是把所有扫到的Repository构造成BeanDefinition注册到Registry, BeanDefinition的BaseClass是MongoRepositoryFactoryBean，所以该FactoryBean是spring data mongo的核心。
 
-**类图**
+从该Sequence Diagram可以看出Repository最终的实现是通过Proxy,这里只列出了两个关键的Interceptor
+
+1. QueryExecutorMethodInterceptor - 该类主要实现了[Query methods](https://docs.spring.io/spring-data/mongodb/docs/2.0.6.RELEASE/reference/html/#mongodb.repositories.queries)
+1. ImplementationMethodExecutionInterceptor - 该类主要实现了[repositories.custom-implementations](https://docs.spring.io/spring-data/mongodb/docs/2.0.6.RELEASE/reference/html/#repositories.custom-implementations)
+
+**Sequence Diagram**
+
+{% plantuml %}
+participant MongoRepositoryFactoryBean
+
+MongoRepositoryFactoryBean -> MongoRepositoryFactoryBean: afterPropertiesSet
+create MongoRepositoryFactory
+MongoRepositoryFactoryBean -> MongoRepositoryFactory: new
+MongoRepositoryFactoryBean -> MongoRepositoryFactory: setRepositoryBaseClass
+MongoRepositoryFactoryBean -> MongoRepositoryFactory: getRepository
+create ProxyFactory
+MongoRepositoryFactory -> ProxyFactory: new
+MongoRepositoryFactory -> ProxyFactory: addAdvice(QueryExecutorMethodInterceptor)
+MongoRepositoryFactory -> ProxyFactory: addAdvice(ImplementationMethodExecutionInterceptor)
+
+MongoRepositoryFactoryBean <-- MongoRepositoryFactory: Repository
+
+{% endplantuml %}
+
+**Class Diagram**
+
 {% plantuml %}
 
 interface FactoryBean
@@ -425,19 +460,187 @@ class RepositoryFactoryBeanSupport {
 	{method} +afterPropertiesSet
 	{method} +T getObject
 }
+class MongoRepositoryFactory
+class ProxyFactory
+class QueryExecutorMethodInterceptor
+class ImplementationMethodExecutionInterceptor
+interface MethodInterceptor
+
 MongoRepositoryFactoryBean --|> RepositoryFactoryBeanSupport
 RepositoryFactoryBeanSupport ..|> FactoryBean
+RepositoryFactoryBeanSupport ..> MongoRepositoryFactory
+MongoRepositoryFactory ..> ProxyFactory
+MongoRepositoryFactory ..> QueryExecutorMethodInterceptor
+MongoRepositoryFactory ..> ImplementationMethodExecutionInterceptor
+QueryExecutorMethodInterceptor ..|> MethodInterceptor
+ImplementationMethodExecutionInterceptor ..|> MethodInterceptor
+
 {% endplantuml %}
 
-**序列图**
+### QueryExecutorMethodInterceptor
+从该Sequence Diagram可看出QueryExecutorMethodInterceptor最终构造了PartTree，PartTree又Predicate组成
+
+#### Sequence Diagram
 {% plantuml %}
-participant MongoRepositoryFactoryBean
 
-MongoRepositoryFactoryBean -> MongoRepositoryFactoryBean: afterPropertiesSet
+QueryExecutorMethodInterceptor -> MongoQueryLookupStrategy:resolveQuery
+create PartTreeMongoQuery
+MongoQueryLookupStrategy -> PartTreeMongoQuery: new
+create PartTree
+PartTreeMongoQuery -> PartTree: new
+create Predicate
+PartTree -> Predicate: new
 
 {% endplantuml %}
 
-**序列图
 
-## 特别
-SurroundingTransactionDetectorMethodInterceptor
+#### Class Diagram
+{% plantuml %}
+interface QueryLookupStrategy
+class MongoQueryLookupStrategy
+interface RepositoryQuery
+class PartTreeMongoQuery
+interface MethodInterceptor
+class QueryExecutorMethodInterceptor
+class PartTree
+QueryExecutorMethodInterceptor ..|> MethodInterceptor
+QueryExecutorMethodInterceptor ..> QueryLookupStrategy 
+MongoQueryLookupStrategy ..|> QueryLookupStrategy
+PartTreeMongoQuery ..|> RepositoryQuery
+MongoQueryLookupStrategy ..> PartTreeMongoQuery
+PartTreeMongoQuery *.. PartTree
+PartTree *.. Predicate
+Predicate *.. OrPart : n
+OrPart *.. Part : n
+
+{% endplantuml %}
+
+### PartTree
+[PartTree](https://github.com/spring-projects/spring-data-commons/blob/70ac316b400937d7e1dff71c1605a4205fc818bd/src/main/java/org/springframework/data/repository/query/parser/PartTree.java#L84)首先通过方法名(source参数)解析出语句类型（查询/更新/删除），然后把余下的部分传给了Predicate, 例如findByAuthorOrTitle(以下的解析把这个方法名作为例子），那么传给Predicate的就是**AuthorOrTitle**
+
+下面这些静态变量则是定义了合法的方法名前缀，从这些变量可知道查询方法的前缀不仅仅只支持“find",😊同时也支持“read/get/query/steam".这些可在官方文档没提及。
+
+
+
+```java
+private static final String KEYWORD_TEMPLATE = "(%s)(?=(\\p{Lu}|\\P{InBASIC_LATIN}))";
+private static final String QUERY_PATTERN = "find|read|get|query|stream";
+private static final String COUNT_PATTERN = "count";
+private static final String EXISTS_PATTERN = "exists";
+private static final String DELETE_PATTERN = "delete|remove";
+private static final Pattern PREFIX_TEMPLATE = Pattern.compile( //
+		"^(" + QUERY_PATTERN + "|" + COUNT_PATTERN + "|" + EXISTS_PATTERN + "|" + DELETE_PATTERN + ")((\\p{Lu}.*?))??By");
+
+
+public PartTree(String source, Class<?> domainClass) {
+
+	Assert.notNull(source, "Source must not be null");
+	Assert.notNull(domainClass, "Domain class must not be null");
+
+	Matcher matcher = PREFIX_TEMPLATE.matcher(source);
+
+	if (!matcher.find()) {
+		this.subject = new Subject(Optional.empty());
+		this.predicate = new Predicate(source, domainClass);
+	} else {
+		this.subject = new Subject(Optional.of(matcher.group(0)));
+		this.predicate = new Predicate(source.substring(matcher.group().length()), domainClass);
+	}
+```
+
+### Predicate
+那么[Predicate](https://github.com/spring-projects/spring-data-commons/blob/70ac316b400937d7e1dff71c1605a4205fc818bd/src/main/java/org/springframework/data/repository/query/parser/PartTree.java#L361)的逻辑又是怎样的呢？Predicate主要是根据repository的方法名，通过关键字“Or"，把方法名split成多个子字符串，构造OrPart, 多个OrPart最终在mongo的查询里就会解析成了$or.例如**AuthorOrTitle**就会被拆成**Author**和**Title**然后构造成两个OrPart对象。
+
+
+```java
+public Predicate(String predicate, Class<?> domainClass) {
+
+	String[] parts = split(detectAndSetAllIgnoreCase(predicate), ORDER_BY);
+
+	if (parts.length > 2) {
+		throw new IllegalArgumentException("OrderBy must not be used more than once in a method name!");
+	}
+
+	this.nodes = Arrays.stream(split(parts[0], "Or")) //
+			.filter(StringUtils::hasText) //
+			.map(part -> new OrPart(part, domainClass, alwaysIgnoreCase)) //
+			.collect(Collectors.toList());
+
+	this.orderBySource = parts.length == 2 ? new OrderBySource(parts[1], Optional.of(domainClass))
+					: OrderBySource.EMPTY;
+```
+
+### OrPart
+从[OrPart](https://github.com/spring-projects/spring-data-commons/blob/70ac316b400937d7e1dff71c1605a4205fc818bd/src/main/java/org/springframework/data/repository/query/parser/PartTree.java#L233)的构造函数可以看出，这里是把Source拆成构造成List\<Part\>,以**Author**作为例子，由于也不包含"And",所以只会有一个Part对象。
+
+```java
+OrPart(String source, Class<?> domainClass, boolean alwaysIgnoreCase) {
+
+	String[] split = split(source, "And");
+
+	this.children = Arrays.stream(split)//
+			.filter(StringUtils::hasText)//
+			.map(part -> new Part(part, domainClass, alwaysIgnoreCase))//
+			.collect(Collectors.toList());
+}
+```
+
+### Part
+[Part](https://github.com/spring-projects/spring-data-commons/blob/70ac316b400937d7e1dff71c1605a4205fc818bd/src/main/java/org/springframework/data/repository/query/parser/Part.java#L69)主要设置了两个成员变量
+
+```java
+	public Part(String source, Class<?> clazz, boolean alwaysIgnoreCase) {
+
+		Assert.hasText(source, "Part source must not be null or empty!");
+		Assert.notNull(clazz, "Type must not be null!");
+
+		String partToUse = detectAndSetIgnoreCase(source);
+
+		if (alwaysIgnoreCase && ignoreCase != IgnoreCaseType.ALWAYS) {
+			this.ignoreCase = IgnoreCaseType.WHEN_POSSIBLE;
+		}
+
+		this.type = Type.fromProperty(partToUse);
+		this.propertyPath = PropertyPath.from(type.extractProperty(partToUse), clazz);
+	}
+```	
+
+1. [type](https://github.com/spring-projects/spring-data-commons/blob/70ac316b400937d7e1dff71c1605a4205fc818bd/src/main/java/org/springframework/data/repository/query/parser/Part.java#L149) - 主要保存了该条件的类型，BETWEEN, IS_NOT_NULL等等， 对于例子中的**author**关键字，则会解析为Type.SIMPLE_PROPERTY,表示EQUAL.
+2. propertyPath - 属性名， **author**
+
+**看到这里，初始化的逻辑基本完毕， Repository的方法最终会被解析并且保存成PartTree, 查询的时候只需要从PartTree生成mongo语句**
+
+### MongoQueryCreator
+[MongoQueryCreator](https://github.com/spring-projects/spring-data-mongodb/blob/17d61004261c388a98bf1cc932318db69073db2f/spring-data-mongodb/src/main/java/org/springframework/data/mongodb/repository/query/MongoQueryCreator.java#L174)从该方法可看出从Part构建出Criteria的过程。
+
+```java
+private Criteria from(Part part, MongoPersistentProperty property, Criteria criteria, Iterator<Object> parameters) {
+
+	Type type = part.getType();
+
+	switch (type) {
+		case AFTER:
+		case GREATER_THAN:
+			return criteria.gt(parameters.next());
+		case GREATER_THAN_EQUAL:
+			return criteria.gte(parameters.next());
+		case BEFORE:
+		case LESS_THAN:
+			return criteria.lt(parameters.next());
+		case LESS_THAN_EQUAL:
+			return criteria.lte(parameters.next());
+		case BETWEEN:
+			return criteria.gt(parameters.next()).lt(parameters.next());
+		case IS_NOT_NULL:
+			return criteria.ne(null);
+		case IS_NULL:
+			return criteria.is(null);
+		case NOT_IN:
+```
+
+# 总结
+1. 扫描路径下继承Repository的接口（当有多个spring data模块存在时，则会限定到MongoRepository)的类生成代理。
+2. 解析接口名生成PartTree,执行的时候根据对应PartTree生成Criteria条件，传给MongoTemplate.
+
+# 彩蛋
+1. 😆看源码过程中发现[SurroundingTransactionDetectorMethodInterceptor](https://github.com/spring-projects/spring-data-commons/blob/70ac316b400937d7e1dff71c1605a4205fc818bd/src/main/java/org/springframework/data/repository/core/support/SurroundingTransactionDetectorMethodInterceptor.java#L35)枚举类可继承接口 
