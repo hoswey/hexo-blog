@@ -82,3 +82,4 @@ deploy:
   type: git
   repo: https://github.com/hoswey/hoswey.github.io.git
   branch: master
+
