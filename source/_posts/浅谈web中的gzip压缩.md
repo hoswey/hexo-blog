@@ -45,7 +45,7 @@ gzip_types       text/plain application/x-javascript text/css application/xml te
 
 所以Nginx对于有via头的，默认则不压缩是合理的
 
-对于该情况，由于对外的都是api接口，不存在cache的情况，所有添加以下配置就解决
+对于该情况，由于对外的都是api接口，不存在cache的情况，所以添加以下配置就解决了
 
 ```
 gzip_proxied: any
