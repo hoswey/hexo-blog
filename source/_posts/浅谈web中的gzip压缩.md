@@ -10,7 +10,7 @@ tags:
 
 ![翻墙中](https://drive.google.com/uc?export=view&id=1891GT0ZRxuzsQzsXlpZTrZ6lCwaOWhLC)
 
-在测试中发现，转发的延迟达到了680ms,远远的超过了134ms（假如连接不复用情况下，那么2rtt也只是268ms）,经过排查，发现响应体约90K,tcp响应得分开90多个包传输，所以总时间拖长了
+在测试中发现，转发的延迟达到了680ms,远远的超过了134ms（假如连接不复用情况下，那么2rtt也只是268ms）,经过排查，发现响应体约90K,tcp响应得分开90多个包传输，由于tcp各种问题，所以总时间拖长了（后续再总结）
 
 **但是**
 
@@ -53,12 +53,14 @@ gzip_proxied: any
 
 web到处充斥着压缩，那么nginx是怎么判断什么时候需要处理的？tomcat呢？ 各个工具间是怎么保证不产生冲突的。
 
-### 先总结
+## 先总结
 
 web到处充斥着压缩，那么nginx是怎么判断什么时候需要处理的？tomcat呢？ 各个工具间是怎么保证不产生冲突的。
 
 1. nginx提供了一系列的gip_前缀的配置控制是否压缩，tomcat由于角色是web容器，所以提供的选项只有3个，连compress level都不提供。 
 2. 在配置启用压缩的前提下， 还会检查 [Content-Encoding](https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Headers/Content-Encoding)是否存在gzip值，对于nginx会更加的详细，会判断多额外的边界条件，例如gzip, q=0也禁用。 从这点上看，nginx+tomcat的这种主流架构，尽管同时启用了gzip,都不会产生冲突。
+
+## 源码解析
 
 ### nginx源码
 
