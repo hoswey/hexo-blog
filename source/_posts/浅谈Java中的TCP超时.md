@@ -1,6 +1,6 @@
 ---
-title: 浅谈Java的各种Http/TCP超时
-date: 2019-07-17 12:26:48
+title: 浅谈Java中的TCP超时
+date: 2019-07-23 10:48:44
 tags:
 ---
 
@@ -55,17 +55,14 @@ AbstractPlainSocketImpl -> PlainSocketImpl: socketConnect(native方法)
 #### PlainSocketImpl.c
 
 {% plantuml %}
+
 PlainSocketImpl.c  -> PlainSocketImpl.c: Java_java_net_PlainSocketImpl_socketConnect
-
 PlainSocketImpl.c -> linux_close.c: NET_Connect(timeout <= 0)
-linux_close.c -> System API: connect
-
+linux_close.c -> System_API: connect
 PlainSocketImpl.c -> linux_close.c: NET_Poll(timeout > 0 && ifndef USE_SELECT )
-linux_close.c -> System API: poll
-
+linux_close.c -> System_API: poll
 PlainSocketImpl.c -> linux_close.c: NET_Select(timeout > 0 && !ifndef USE_SELECT )
-linux_close.c -> System API: Select
-
+linux_close.c -> System_API: Select
 
 {% endplantuml %}
 
@@ -149,7 +146,7 @@ SocketInputStream -> SocketInputStream: read(timeout)
 SocketInputStream -> AbstractPlainSocketImpl: acquireFD
 SocketInputStream -> SocketInputStream.c: Native Method socketRead0(fd, timeout)
 SocketInputStream.c -> linux_close.c: NET_Timeout(timeout)
-linux_close.c -> System API: poll(fd, POLLIN | POLLERR, timeout)
+linux_close.c -> System_API: poll(fd, POLLIN | POLLERR, timeout)
 
 {% endplantuml %}
 
