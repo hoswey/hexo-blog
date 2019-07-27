@@ -6,9 +6,9 @@ tags:
 
 ## 背景
 
-在远程调用的世界里，Timeout的情况非常常见，几乎每段时间就会听到几个同事关于Timeout各种情况的讨论，偶尔的会出现不同开发语言间的同事的讨论，例如read timeout, 是否在C和Java是同一种情况？
+在远程调用的世界里，Timeout的情况非常常见，几乎每段时间就会听到几个同事关于Timeout各种情况的讨论，偶尔的会出现不同开发语言间的同事的讨论，例如read timeout, 语言的隔阂使得大家讨论的都不知道是否是同一回事。
 
-对于Java，各种远程调用，http,hessian,dubbo什么的，抛个timeout异常也是常见的事情，所以本文从Java到操作系统层面尝试说明常见的各种Timeout
+对于Java，各种远程调用，http,hessian,dubbo什么的，抛个timeout异常也是常见的事情，timeout是什么，一般追追源码，追到最后发现是个native方法，看着javadoc, 了解得不甚透彻。 所以本文尽量从Java到操作系统层面尝试说明常见的各种Timeout。
 
 ## 主要内容
 
@@ -67,7 +67,7 @@ linux_close.c -> System_API: Select
 {% endplantuml %}
 
 
-以下只截取部分重要的源码， 从源码上看，没设置超时时间时，jvm采用 connect的传统阻塞式方式，反之,则采用select/poll非阻塞式的方式, 由于poll/select都是得采用轮询的方式，在客户端没有设置的时候，采用轮询会带来不必要的开销
+以下只截取部分重要的源码， 从源码上看，没设置超时时间时，jvm采用 connect的传统阻塞式方式，反之,则采用select/poll非阻塞式的方式, 由于poll/select都是得采用轮询的方式，在客户端没有设置超时的时候，采用轮询会带来不必要的开销，所以没设置超时时采用connect的阻塞方式是合理的
 
 ```c
 JNIEXPORT void JNICALL
@@ -139,7 +139,7 @@ else {
 
 ### 原理 Read timed out
 
-从下面这个序列图看， read timedout的原理就是通过系统调用 poll, 传入对应的socket文件句柄，在timeout时间内没有数据返回
+从下面这个时序图看， read timedout的原理就是通过系统调用 poll, 传入对应的socket文件句柄，在timeout时间内没有数据返回
 
 {% plantuml %}
 SocketInputStream -> SocketInputStream: read(timeout)
@@ -181,4 +181,4 @@ if (timeout) {
 ## 总结
 
 1. "connect timed out" 是在指定时间内TCP连接未创建成功时jdk抛出的异常
-2. "Read timed out"是在调用socketread后，指定时间内未收到响应时 jdk抛出的异常。
+2. "Read timed out"是在调用socketread后，指定时间内未收到响应时 jdk抛出的异常， 假如一个http响应10k, 每次socket read 4k, 那么就需要发起3次read的请求，假如timeout设置3秒，那么就允许每次read都等待3秒，最差的情况就是大概6秒读完数据，当然这得是极端的网络情况， 所以大部分情况下都是客户端发起请求后，在指定时间内收到的服务器的回包响应。
