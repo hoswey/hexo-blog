@@ -36,9 +36,9 @@ gzip_types       text/plain application/x-javascript text/css application/xml te
 > Via: 1.1 google
 > 
 
-通过查阅nginx配置
+通过查阅nginx配置,发现有个可疑的配置
 
-[gzip_proxied](http://nginx.org/en/docs/http/ngx_http_gzip_module.html#gzip_proxied)发现nginx默认是不会对于来自代理服务器的请求就行压缩的，原因可参考[what are the options for the gzip proxied for](https://stackoverflow.com/questions/33375304/what-are-the-options-for-the-gzip-proxied-directive-for),简而言之
+[gzip_proxied](http://nginx.org/en/docs/http/ngx_http_gzip_module.html#gzip_proxied): nginx默认是不会对于来自代理服务器的请求就行压缩的，原因可参考[what are the options for the gzip proxied for](https://stackoverflow.com/questions/33375304/what-are-the-options-for-the-gzip-proxied-directive-for),简而言之
 
 1. 客户端支持的压缩协议不同，假如把响应gzip放在代理服务器上，代理服务器还是得解压了再按客户端支持的协议重新下发，或者客户端不支持或者不期望压缩。
 2. 对于某些内容，得基于未压缩的文件进行处理，例如视频的播放或者断点下载，客户端发起[range](https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Range_requests#%E5%8D%95%E4%B8%80%E8%8C%83%E5%9B%B4)请求，服务端依然得基于未压缩的内容进行处理。
@@ -55,10 +55,9 @@ web到处充斥着压缩，那么nginx是怎么判断什么时候需要处理的
 
 ## 先总结
 
-web到处充斥着压缩，那么nginx是怎么判断什么时候需要处理的？tomcat呢？ 各个工具间是怎么保证不产生冲突的。
-
-1. nginx提供了一系列的gip_前缀的配置控制是否压缩，tomcat由于角色是web容器，所以提供的选项只有3个，连compress level都不提供。 
+1. nginx提供了一系列的gzip_前缀的配置控制是否压缩，tomcat由于角色是web容器，所以提供的选项只有3个，连compress level都不提供。 
 2. 在配置启用压缩的前提下， 还会检查 [Content-Encoding](https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Headers/Content-Encoding)是否存在gzip值，对于nginx会更加的详细，会判断多额外的边界条件，例如gzip, q=0也禁用。 从这点上看，nginx+tomcat的这种主流架构，尽管同时启用了gzip,都不会产生冲突。
+3. http针对压缩有accept-encoding（针对请求）以及Content-Encoding(针对响应)，所以服务器间压缩前判断是否Content-Encoding已经标明该内容以及压缩了，则不进行重复压缩。
 
 ## 源码解析
 
