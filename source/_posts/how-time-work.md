@@ -88,7 +88,7 @@ jlong os::javaTimeMillis() {
 总的来说，现代操作系统主板上会有个[Real Time Clock](https://en.wikipedia.org/wiki/Real-time_clock),记录着当前的时间，通过主板上的电池[CMOS Battery](https://en.wikipedia.org/wiki/Nonvolatile_BIOS_memory#CMOS_battery)维持,假如电池没电了,那我们启动后时间就会出现不正常的情况，通过api去获取时间当然的也会出现相应的问题问题。假如时间出现问题，可以通过手动或者自动的方式校准。  
 
 服务器启动的时候就会读取当前时间，保存到kernel，记T1  
-同时启动[TSC](https://en.wikipedia.org/wiki/Time_Stamp_Counter),什么是TSC?简单来说就是一个64bit的寄存器，记录着服务器启动以来cpu的cycle,每个cycle的时间就是1/CPU频率，例如cpu 2HZ, 那么就表示一个cycle的时间是0.5ns
+同时启动[TSC](https://en.wikipedia.org/wiki/Time_Stamp_Counter),什么是TSC?简单来说就是一个64bit的寄存器，记录着服务器启动以来cpu的cycle,每个cycle的时间就是1/CPU频率，例如cpu 2GHZ, 那么就表示一个cycle的时间是0.5ns
 所以获取当前时间的方式就是
 
 ```
