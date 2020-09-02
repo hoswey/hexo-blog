@@ -182,3 +182,4 @@ if (timeout) {
 
 1. "connect timed out" 是在指定时间内TCP连接未创建成功时jdk抛出的异常
 2. "Read timed out"是在调用socketread后，指定时间内未收到响应时 jdk抛出的异常， 假如一个http响应10k, 每次socket read 4k, 那么就需要发起3次read的请求，假如timeout设置3秒，那么就允许每次read都等待3秒，最差的情况就是大概6秒读完数据，当然这得是极端的网络情况， 所以大部分情况下都是客户端发起请求后，在指定时间内收到的服务器的回包响应。
+## 
