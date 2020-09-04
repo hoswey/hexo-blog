@@ -205,7 +205,7 @@ Java除了System.currentTimeMillis(),还有一个常用的获取时间api, Syste
 ```
 
 那么nanoTime有什么应用场景呢，其实在jdk里面有些类也特意使用了nanoTime.  
-Java有个表经典的问题，**为什么使用ScheduledThreadPoolExecutor而非Timer**.   
+Java有个经典的问题，**为什么使用ScheduledThreadPoolExecutor而非Timer**.   
 [Java Concurrency in Practice
 ](http://jcip.net/)里对比[Timer](http://hg.openjdk.java.net/jdk8/jdk8/jdk/file/687fd7c7986d/src/share/classes/java/util/Timer.java#l180)和ScheduledThreadPoolExecutor提到以下
 
