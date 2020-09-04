@@ -262,6 +262,9 @@ jlong os::javaTimeNanos() {
 
 待补充
 
+## 补充信息
+gettimeofday虽然是存在一定开销，但linux其实已经针对做了很多优化，其实在目前，连系统调用的开销也已经消除了，通过vsdo技术，待持续学习
+
 ## 引用
 1. [how-do-computers-keep-track-of-time](https://cs.stackexchange.com/questions/54933/how-do-computers-keep-track-of-time/54935#54935?newreg=a3c82ae7da40419fac87f267f2f76623)  
 1. [select posix clocks](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux_for_real_time/7/html/reference_guide/sect-posix_clocks#CLOCK_MONOTONIC_COARSE_and_CLOCK_REALTIME_COARSE)
