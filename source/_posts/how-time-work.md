@@ -146,14 +146,14 @@ rdtsc (cycles) => 24 cycles
 
 服务器CPU为 3.4GHz
 
-||||||||
-|---|---|---|---|---|---|---|
-|                  Method  |  samples |          min |          max |          avg |       median |        stdev|
-|           CLOCK_REALTIME |  1023    | 14.00        | 18.00        | 16.15        | 16.00        |  1.24|
-|    CLOCK_REALTIME_COARSE |  1023    |  0.00        |  0.00        |  0.00        |  0.00        |  0.00|
-|          CLOCK_MONOTONIC |  1023    | 14.00        | 19.00        | 15.88        | 16.50        |  1.23|
-|      CLOCK_MONOTONIC_RAW |  1023    | 63.00        | 67.00        | 64.87        | 65.00        |  1.23|
-|   CLOCK_MONOTONIC_COARSE |  1023    |  0.00        |  0.00        |  0.00        |  0.00        |  0.00|
+|                  Method  |          min |          max |          avg |       median |        stdev|
+|---|---|---|---|---|---|
+|           CLOCK_REALTIME | 14.00        | 18.00        | 16.15        | 16.00        |  1.24|
+|    CLOCK_REALTIME_COARSE |  0.00        |  0.00        |  0.00        |  0.00        |  0.00|
+|          CLOCK_MONOTONIC | 14.00        | 19.00        | 15.88        | 16.50        |  1.23|
+|      CLOCK_MONOTONIC_RAW | 63.00        | 67.00        | 64.87        | 65.00        |  1.23|
+|   CLOCK_MONOTONIC_COARSE |  0.00        |  0.00        |  0.00        |  0.00        |  0.00|
+
 
 
 ## java获取当前时间的原理，是否存在性能问题
@@ -257,10 +257,16 @@ jlong os::javaTimeNanos() {
 ```
 
 ## nginx是如何做优化
+
+简单说， nginx是通过时间缓存优化时间获取的效率，定时更新缓存，获取时间时从该缓存获取
+
 待补充
 
 ## 引用
-[how-do-computers-keep-track-of-time](https://cs.stackexchange.com/questions/54933/how-do-computers-keep-track-of-time/54935#54935?newreg=a3c82ae7da40419fac87f267f2f76623)
+1. [how-do-computers-keep-track-of-time](https://cs.stackexchange.com/questions/54933/how-do-computers-keep-track-of-time/54935#54935?newreg=a3c82ae7da40419fac87f267f2f76623)  
+1. [select posix clocks](https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux_for_real_time/7/html/reference_guide/sect-posix_clocks#CLOCK_MONOTONIC_COARSE_and_CLOCK_REALTIME_COARSE)
+1. [fast equivalent of gettimeofday](https://stackoverflow.com/questions/6498972/faster-equivalent-of-gettimeofday)
+1. [HPET vs TSC](https://www.chromium.org/chromium-os/how-tos-and-troubleshooting/tsc-resynchronization)
 
 [gettimeofday]:https://man7.org/linux/man-pages/man2/gettimeofday.2.html
 [clock_gettime]:https://www.man7.org/linux/man-pages/man2/clock_gettime.2.html
